@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PMI — Temporizador de Debate Relâmpago</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background-color: #0d2255;
+      background-image: url('logo.png');
+      background-repeat: no-repeat;
+      background-size: 350px auto;
+      background-position: calc(100% - 24px) 20px;
+      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      gap: 32px;
+      position: relative;
+      transition: background-color 1s;
+    }
+    body.finished { background-color: #052e16; }
+
+    #footer {
+      position: fixed; bottom: 18px; left: 22px;
+      font-size: 11px; color: rgba(255,255,255,0.4);
+      letter-spacing: 0.04em; line-height: 1.7;
+      user-select: none;
+    }
+
+    /* Sidebar */
+    #sidebar {
+      width: 160px; flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 3px;
+      padding-top: 8px;
+    }
+    .phase-row {
+      padding: 5px 8px; border-radius: 6px;
+      border-left: 3px solid transparent;
+      transition: all 0.3s;
+    }
+    .phase-row.current {
+      background: rgba(255,255,255,0.1);
+      border-left-color: #fff;
+    }
+    .phase-row .pl { font-size: 10px; font-weight: 400; color: #4a6090; line-height: 1.3; }
+    .phase-row.current .pl { font-weight: 700; color: #fff; }
+    .phase-row .pt { font-size: 9px; color: #334d7a; margin-top: 1px; }
+    .phase-row.current .pt { color: #cbd5e1; }
+
+    /* Main */
+    #main { display: flex; flex-direction: column; align-items: center; }
+    #phase-label { font-size: 32px; font-weight: 800; color: #fff; margin-bottom: 2px; text-align: center; }
+    #phase-team  { font-size: 20px; color: #cbd5e1; margin-bottom: 32px; }
+
+    /* Ring */
+    #ring-wrap { position: relative; width: 260px; height: 260px; margin-bottom: 40px; }
+    #ring-svg { transform: rotate(-90deg); }
+    #ring-bg { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 14; }
+    #ring-fg { fill: none; stroke: #fff; stroke-width: 14; stroke-linecap: round; transition: stroke-dashoffset 0.8s linear, stroke 0.3s; }
+    #ring-fg.done { stroke: #ef4444; }
+    #timer-text {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    #timer-digits { font-size: 70px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; line-height: 1; }
+    #timer-digits.done { color: #ef4444; }
+    #timer-label { font-size: 11px; color: #ef4444; margin-top: 8px; letter-spacing: 0.12em; display: none; }
+
+    /* Interpelação */
+    #interp-wrap {
+      width: 260px; height: 260px; margin-bottom: 40px;
+      background: rgba(255,255,255,0.05); border-radius: 50%;
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      border: 4px solid #f59e0b;
+    }
+    #interp-wrap.response { border-color: #10b981; box-shadow: 0 0 40px #10b98133; }
+    #interp-wrap.group    { box-shadow: 0 0 40px #f59e0b33; }
+    #interp-tag   { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #94a3b8; margin-bottom: 6px; }
+    #interp-who   { font-size: 15px; font-weight: 600; color: #f59e0b; margin-bottom: 8px; }
+    #interp-wrap.response #interp-who { color: #10b981; }
+    #interp-digits { font-size: 64px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+    #btn-skip { margin-top: 14px; padding: 6px 14px; background: transparent; border: 1px solid #475569; border-radius: 6px; color: #94a3b8; font-size: 12px; cursor: pointer; }
+
+    /* Buttons */
+    .btn-row { display: flex; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center; }
+    .btn-row2 { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    button.ctrl {
+      padding: 14px 24px; border-radius: 12px;
+      font-size: 15px; font-weight: 700; cursor: pointer;
+      min-width: 150px; border: 1px solid rgba(255,255,255,0.15);
+      transition: all 0.15s; color: #f1f5f9;
+    }
+    button.ctrl:disabled { background: transparent; border-color: #1e3a6e; color: #1e3a6e; cursor: not-allowed; }
+    #btn-prev, #btn-next, #btn-reset { background: #1e3a6e; }
+    #btn-start { background: #fff; color: #0d2255; }
+    #btn-start.running { background: #334155; color: #fff; }
+    #btn-interp { background: #78350f; color: #fcd34d; }
+    #no-interp { font-size: 11px; color: #2d4a7a; padding: 10px 0; }
+
+    /* Finished screen */
+    #finished-screen { display: none; flex-direction: column; align-items: center; text-align: center; }
+    #finished-screen.visible { display: flex; }
+    #fin-emoji { font-size: 60px; margin-bottom: 12px; }
+    #fin-title { font-size: 28px; font-weight: 800; color: #4ade80; margin-bottom: 8px; }
+    #fin-sub   { font-size: 14px; color: #86efac; margin-bottom: 40px; }
+    #fin-btns  { display: flex; gap: 12px; justify-content: center; }
+    #btn-applause { background: #14532d; color: #4ade80; }
+    #btn-restart  { background: #1e3a6e; }
+  </style>
+</head>
+<body>
+
+  <div id="footer">
+    Projecto Multidisciplinar I<br />
+    <span id="clock"></span>
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar"></div>
+
+  <!-- Main -->
+  <div id="main">
+
+    <!-- Normal debate view -->
+    <div id="debate-view">
+      <div id="phase-label"></div>
+      <div id="phase-team"></div>
+
+      <!-- Ring timer -->
+      <div id="ring-wrap">
+        <svg id="ring-svg" width="260" height="260">
+          <circle id="ring-bg" cx="130" cy="130" r="110" />
+          <circle id="ring-fg" cx="130" cy="130" r="110" />
+        </svg>
+        <div id="timer-text">
+          <div id="timer-digits"></div>
+          <div id="timer-label">TEMPO ESGOTADO</div>
+        </div>
+      </div>
+
+      <!-- Interpelação ring -->
+      <div id="interp-wrap">
+        <div id="interp-tag">Interpelação</div>
+        <div id="interp-who"></div>
+        <div id="interp-digits"></div>
+        <button id="btn-skip" onclick="skipInterp()"></button>
+      </div>
+
+      <!-- Controls -->
+      <div class="btn-row">
+        <button id="btn-prev"  class="ctrl" onclick="goPrev()">← Fase anterior</button>
+        <button id="btn-start" class="ctrl" onclick="toggleRun()">▶  Iniciar</button>
+        <button id="btn-next"  class="ctrl" onclick="goNext()">Fase seguinte →</button>
+      </div>
+      <div class="btn-row2">
+        <button id="btn-interp" class="ctrl" onclick="startInterp()">✋ Interpelação (1 + 1 min)</button>
+        <div id="no-interp">Interpelações não permitidas nesta fase</div>
+        <button id="btn-reset" class="ctrl" onclick="resetDebate()">↺ Reiniciar debate</button>
+      </div>
+    </div>
+
+    <!-- Finished screen -->
+    <div id="finished-screen">
+      <div id="fin-emoji">🎉</div>
+      <div id="fin-title">Debate concluído!</div>
+      <div id="fin-sub">Bom trabalho a todos os grupos.</div>
+      <div id="fin-btns">
+        <button id="btn-applause" class="ctrl" onclick="playApplause()">👏 Palmas</button>
+        <button id="btn-restart"  class="ctrl" onclick="resetDebate()">↺ Reiniciar</button>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+
+<script>
+const PHASES = [
+  { label:"Apresentação",  team:"Defesa",   duration:120 },
+  { label:"Apresentação",  team:"Oposição",  duration:120 },
+  { label:"Conferência 1", team:"Ambas",    duration:60  },
+  { label:"Refutação 1",   team:"Defesa",   duration:120 },
+  { label:"Refutação 1",   team:"Oposição", duration:120 },
+  { label:"Conferência 2", team:"Ambas",    duration:60  },
+  { label:"Refutação 2",   team:"Defesa",   duration:60  },
+  { label:"Refutação 2",   team:"Oposição", duration:60  },
+  { label:"Conferência 3", team:"Ambas",    duration:60  },
+  { label:"Conclusão",     team:"Defesa",   duration:60  },
+  { label:"Conclusão",     team:"Oposição", duration:60  },
+];
+const CIRC = 2 * Math.PI * 110;
+const APARTE_DUR = 60;
+const NO_INTERP = ["Apresentação","Conclusão"];
+
+let phaseIdx   = 0;
+let timeLeft   = PHASES[0].duration;
+let running    = false;
+let done       = false;
+let finished   = false;
+let interp     = null; // null | "group" | "response"
+let interpTime = APARTE_DUR;
+let mainTimer  = null;
+let interpTimer= null;
+
+// --- Audio ---
+function playSound(file) {
+  try { new Audio(file).play().catch(()=>{}); } catch(e){}
+}
+function playBell()     { playSound("boxing bell.wav"); }
+function playApplause() { playSound("applause.wav"); }
+
+// --- Formatting ---
+function fmt(s) {
+  const m = Math.floor(Math.abs(s)/60);
+  const sec = Math.abs(s)%60;
+  return m+":"+(sec<10?"0":"")+sec;
+}
+function fmtClock(d) {
+  const p = n => String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())
+    +" "+p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds());
+}
+
+// --- Clock ---
+setInterval(()=>{ document.getElementById("clock").textContent = fmtClock(new Date()); }, 1000);
+document.getElementById("clock").textContent = fmtClock(new Date());
+
+// --- Sidebar ---
+function buildSidebar() {
+  const sb = document.getElementById("sidebar");
+  sb.innerHTML = "";
+  PHASES.forEach((p,i) => {
+    const d = document.createElement("div");
+    d.className = "phase-row" + (i===phaseIdx?" current":"");
+    d.innerHTML = `<div class="pl">${p.label}</div><div class="pt">${p.team} · ${fmt(p.duration)}</div>`;
+    sb.appendChild(d);
+  });
+}
+
+// --- Ring ---
+function updateRing() {
+  const ph = PHASES[phaseIdx];
+  const progress = 1 - timeLeft/ph.duration;
+  const offset = CIRC * (1-progress); // remaining arc
+  const fg = document.getElementById("ring-fg");
+  fg.setAttribute("stroke-dasharray", CIRC);
+  fg.setAttribute("stroke-dashoffset", CIRC - offset);
+  fg.className.baseVal = done ? "done" : "";
+  document.getElementById("timer-digits").textContent = fmt(timeLeft);
+  document.getElementById("timer-digits").className = done ? "done" : "";
+  document.getElementById("timer-label").style.display = done ? "block" : "none";
+}
+
+// --- Interp display ---
+function updateInterpDisplay() {
+  const iw = document.getElementById("interp-wrap");
+  const rw = document.getElementById("ring-wrap");
+  if (interp) {
+    iw.style.display = "flex";
+    rw.style.display = "none";
+    iw.className = interp==="group" ? "group" : "response";
+    document.getElementById("interp-who").textContent =
+      interp==="group" ? "Grupo interpelante fala" : "Equipa responde";
+    document.getElementById("interp-digits").textContent = fmt(interpTime);
+    document.getElementById("btn-skip").textContent =
+      "Saltar → " + (interp==="group" ? "resposta" : "retomar");
+  } else {
+    iw.style.display = "none";
+    rw.style.display = "block";
+  }
+}
+
+// --- Button states ---
+function updateButtons() {
+  const ph = PHASES[phaseIdx];
+  const noI = NO_INTERP.includes(ph.label);
+  document.getElementById("btn-prev").disabled  = phaseIdx===0;
+  document.getElementById("btn-start").disabled = !!interp;
+  document.getElementById("btn-start").textContent = running ? "⏸  Pausar" : "▶  Iniciar";
+  document.getElementById("btn-start").className = "ctrl" + (running?" running":"");
+  document.getElementById("btn-interp").style.display = (!noI && !interp) ? "inline-block" : "none";
+  document.getElementById("no-interp").style.display  = noI ? "block" : "none";
+}
+
+// --- Full render ---
+function render() {
+  if (finished) {
+    document.getElementById("debate-view").style.display = "none";
+    document.getElementById("finished-screen").classList.add("visible");
+    document.body.classList.add("finished");
+    return;
+  }
+  document.getElementById("debate-view").style.display = "block";
+  const ph = PHASES[phaseIdx];
+  document.getElementById("phase-label").textContent = ph.label;
+  document.getElementById("phase-team").textContent  = ph.team;
+  buildSidebar();
+  updateRing();
+  updateInterpDisplay();
+  updateButtons();
+}
+
+// --- Main ticker ---
+function startMainTicker() {
+  clearInterval(mainTimer);
+  mainTimer = setInterval(() => {
+    if (!running || interp) return;
+    timeLeft--;
+    if (timeLeft <= 0) {
+      timeLeft = 0;
+      clearInterval(mainTimer);
+      running = false; done = true;
+      if (phaseIdx === PHASES.length-1) { finished=true; playApplause(); }
+      render();
+    } else { updateRing(); }
+  }, 1000);
+}
+
+// --- Interp ticker ---
+function startInterpTicker() {
+  clearInterval(interpTimer);
+  interpTimer = setInterval(() => {
+    interpTime--;
+    if (interpTime <= 0) {
+      interpTime = 0;
+      clearInterval(interpTimer);
+      if (interp==="group") {
+        interp="response"; interpTime=APARTE_DUR; playBell();
+        updateInterpDisplay();
+        startInterpTicker();
+      } else {
+        interp=null; render();
+      }
+    } else { document.getElementById("interp-digits").textContent = fmt(interpTime); }
+  },1000);
+}
+
+// --- Controls ---
+function toggleRun() {
+  if (done && phaseIdx<PHASES.length-1) return;
+  if (!running) playBell();
+  running = !running;
+  if (running) startMainTicker();
+  else clearInterval(mainTimer);
+  updateButtons();
+}
+
+function goNext() {
+  if (finished) { playApplause(); return; }
+  clearInterval(mainTimer);
+  if (phaseIdx >= PHASES.length-1) { finished=true; playApplause(); render(); return; }
+  phaseIdx++; timeLeft=PHASES[phaseIdx].duration;
+  running=false; done=false; interp=null;
+  playBell(); render();
+}
+
+function goPrev() {
+  if (phaseIdx===0) return;
+  clearInterval(mainTimer);
+  phaseIdx--; timeLeft=PHASES[phaseIdx].duration;
+  running=false; done=false; interp=null;
+  render();
+}
+
+function startInterp() {
+  clearInterval(mainTimer); running=false;
+  interp="group"; interpTime=APARTE_DUR;
+  render(); startInterpTicker();
+}
+
+function skipInterp() {
+  clearInterval(interpTimer);
+  if (interp==="group") {
+    interp="response"; interpTime=APARTE_DUR; playBell();
+    updateInterpDisplay(); startInterpTicker();
+  } else { interp=null; render(); }
+}
+
+function resetDebate() {
+  clearInterval(mainTimer); clearInterval(interpTimer);
+  phaseIdx=0; timeLeft=PHASES[0].duration;
+  running=false; done=false; finished=false; interp=null;
+  document.body.classList.remove("finished");
+  document.getElementById("finished-screen").classList.remove("visible");
+  render();
+}
+
+// --- Init ---
+render();
+</script>
+</body>
+</html>
