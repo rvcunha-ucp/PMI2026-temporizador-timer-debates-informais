@@ -8,7 +8,6 @@
     :root { --red: #B22234; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    
     body {
       min-height: 100vh;
       background-color: #0b2550;
@@ -265,7 +264,7 @@ let interpTimer= null;
 
 function playSound(f) { try { new Audio(f).play().catch(()=>{}); } catch(e){} }
 function playBell()     { playSound("boxing bell.wav"); }
-function playBuzzer()   { playSound("buzzer.wav"); }
+function playGong()   { playSound("meditation gong.wav"); }
 function playApplause() { playSound("applause.wav"); }
 
 function fmt(s) {
@@ -351,7 +350,7 @@ function startMainTicker() {
     timeLeft--;
     if (timeLeft <= 0) {
       timeLeft=0; clearInterval(mainTimer); running=false; done=true;
-      playBuzzer();
+      playGong();
       if (phaseIdx===PHASES.length-1) { finished=true; playApplause(); }
       render();
     } else { updateRing(); }
@@ -390,7 +389,7 @@ function goNext() {
   if (phaseIdx>=PHASES.length-1) { finished=true; playApplause(); render(); return; }
   phaseIdx++; timeLeft=PHASES[phaseIdx].duration;
   running=false; done=false; interp=null;
-  playBuzzer(); render();
+  playGong(); render();
 }
 
 function goPrev() {
