@@ -172,10 +172,11 @@
 
     /* Rodapé */
     #footer {
-      position: fixed; bottom: 18px; left: 22px;
+      position: fixed; bottom: 18px; right: 22px;
       font-size: 12px; color: rgba(255,255,255,0.4);
       letter-spacing: 0.04em; line-height: 1.7;
       user-select: none;
+      text-align: right;
     }
   </style>
 </head>
@@ -233,6 +234,54 @@
       </div>
     </div>
   </div>
+// ── Suporte a apontador de apresentação ──────────────────────────────────────
+// Teclas enviadas pela maioria dos clickers (Logitech, Kensington, Interlink):
+//   Avançar : PageDown | ArrowRight | Period      → avança fase OU inicia/pausa
+//   Recuar  : PageUp   | ArrowLeft  | Escape(*)   → recua fase
+//   (*) Escape só recua; não fecha nada, pois não há diálogos modais.
+//
+// Lógica adoptada:
+//   - Se o debate ainda não começou (timeLeft == duração total e !running):
+//       PageDown/Right → toggleRun()   (inicia)
+//   - Se em curso (!done):
+//       PageDown/Right → toggleRun()   (pausa/retoma)
+//   - Se fase concluída (done):
+//       PageDown/Right → goNext()      (avança fase)
+//   - PageUp/Left → goPrev() sempre (comportamento idêntico ao botão)
+// ─────────────────────────────────────────────────────────────────────────────
+
+document.addEventListener("keydown", function (e) {
+  // Ignora se o foco estiver num campo de texto (segurança extra)
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+
+  const ADVANCE = ["PageDown", "ArrowRight", "Period", " ", "Enter"];
+  const BACK    = ["PageUp",   "ArrowLeft",  "Escape", "Backspace"];
+
+  if (ADVANCE.includes(e.key)) {
+    e.preventDefault();
+    if (finished) { playApplause(); return; }
+    if (interp)   { skipInterp();   return; }   // avança dentro da interpelação
+    if (done)     { goNext();       return; }   // fase terminada → próxima fase
+    toggleRun();                                 // inicia ou pausa
+    return;
+  }
+
+  if (BACK.includes(e.key)) {
+    e.preventDefault();
+    if (e.key === "Escape" && !finished) { goPrev(); }
+    else if (e.key !== "Escape")          { goPrev(); }
+    return;
+  }
+
+  // Interpelação: I ou F5
+  // Só actua se o botão estiver visível (fase permite interpelação, nenhuma em curso)
+  if (e.key === "i" || e.key === "I" || e.key === "F5") {
+    e.preventDefault();
+    const btn = document.getElementById("btn-interp");
+    if (btn && btn.style.display !== "none") { startInterp(); }
+    return;
+  }
+});
 
 <script>
 const PHASES = [
@@ -264,7 +313,7 @@ let interpTimer= null;
 
 function playSound(f) { try { new Audio(f).play().catch(()=>{}); } catch(e){} }
 function playBell()     { playSound("boxing bell.wav"); }
-function playGong()   { playSound("meditation gong.wav"); }
+function playBuzzer()   { playSound("meditation gong.wav"); }
 function playApplause() { playSound("applause.wav"); }
 
 function fmt(s) {
@@ -350,7 +399,7 @@ function startMainTicker() {
     timeLeft--;
     if (timeLeft <= 0) {
       timeLeft=0; clearInterval(mainTimer); running=false; done=true;
-      playGong();
+      playBuzzer();
       if (phaseIdx===PHASES.length-1) { finished=true; playApplause(); }
       render();
     } else { updateRing(); }
@@ -389,7 +438,7 @@ function goNext() {
   if (phaseIdx>=PHASES.length-1) { finished=true; playApplause(); render(); return; }
   phaseIdx++; timeLeft=PHASES[phaseIdx].duration;
   running=false; done=false; interp=null;
-  playGong(); render();
+  playBuzzer(); render();
 }
 
 function goPrev() {
