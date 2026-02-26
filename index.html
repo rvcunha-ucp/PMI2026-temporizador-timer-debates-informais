@@ -17,9 +17,16 @@
       background-position: calc(100% - 24px) 20px;
       font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
       color: #fff;
-      transition: background-color 1s;
+      /* removed transition and body.finished rule — background never changes */
     }
-    body.finished { background-color: #052e16; }
+
+    /* Confetti canvas overlay */
+    #confetti-canvas {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 999;
+    }
 
     /* Sidebar */
     #sidebar {
@@ -46,7 +53,6 @@
     .phase-row .pt { font-size: 14px; color: #334d7a; margin-top: 2px; }
     .phase-row.current .pt { color: #cbd5e1; }
 
-    /* Wrapper central */
     #main {
       min-height: 100vh;
       display: flex;
@@ -54,7 +60,6 @@
       justify-content: center;
     }
 
-    /* Coluna de conteúdo com largura fixa */
     #debate-view {
       display: flex;
       flex-direction: column;
@@ -75,7 +80,7 @@
       margin-bottom: 35px;
     }
 
-    /* Anel */
+    /* Ring */
     #ring-wrap {
       position: relative;
       width: 374px; height: 374px;
@@ -101,7 +106,7 @@
       margin-top: 9px; letter-spacing: 0.12em; display: none;
     }
 
-    /* Interpelação */
+    /* Interp */
     #interp-wrap {
       width: 374px; height: 374px;
       margin: 0 auto 44px;
@@ -122,7 +127,7 @@
       border-radius: 6px; color: #94a3b8; font-size: 13px; cursor: pointer;
     }
 
-    /* Botões */
+    /* Buttons */
     .btn-row {
       position: relative;
       display: flex;
@@ -157,20 +162,46 @@
     #btn-interp { background: var(--red); color: #fff; }
     #no-interp { font-size: 12px; color: #2d4a7a; padding: 10px 0; }
 
-    /* Ecrã final */
+    /* Finished screen */
     #finished-screen {
       display: none; flex-direction: column;
       align-items: center; text-align: center;
     }
     #finished-screen.visible { display: flex; }
-    #fin-emoji  { font-size: 66px; margin-bottom: 13px; }
-    #fin-title  { font-size: 31px; font-weight: 800; color: #4ade80; margin-bottom: 9px; }
-    #fin-sub    { font-size: 15px; color: #86efac; margin-bottom: 44px; }
-    #fin-btns   { display: flex; gap: 13px; justify-content: center; }
-    #btn-applause { background: #14532d; color: #4ade80; }
+
+    /* Animated trophy/emoji */
+    #fin-emoji {
+      font-size: 88px;
+      margin-bottom: 13px;
+      animation: popBounce 0.6s cubic-bezier(.36,1.56,.64,1) both;
+    }
+    @keyframes popBounce {
+      0%   { transform: scale(0) rotate(-20deg); opacity: 0; }
+      60%  { transform: scale(1.25) rotate(6deg); opacity: 1; }
+      100% { transform: scale(1) rotate(0deg); opacity: 1; }
+    }
+
+    #fin-title {
+      font-size: 44px; font-weight: 800; color: #fff;
+      margin-bottom: 9px;
+      animation: fadeSlideUp 0.5s 0.2s ease both;
+    }
+    #fin-sub {
+      font-size: 17px; color: #cbd5e1;
+      margin-bottom: 44px;
+      animation: fadeSlideUp 0.5s 0.35s ease both;
+    }
+    @keyframes fadeSlideUp {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    #fin-btns   { display: flex; gap: 13px; justify-content: center;
+                  animation: fadeSlideUp 0.5s 0.5s ease both; }
+    #btn-applause { background: #1e3a6e; color: #fff; }
     #btn-restart  { background: #1e3a6e; }
 
-    /* Rodapé */
+    /* Footer */
     #footer {
       position: fixed; bottom: 18px; right: 22px;
       font-size: 12px; color: rgba(255,255,255,0.4);
@@ -181,6 +212,8 @@
   </style>
 </head>
 <body>
+
+  <canvas id="confetti-canvas"></canvas>
 
   <div id="footer">
     Projecto Multidisciplinar I<br />
@@ -225,65 +258,85 @@
     </div>
 
     <div id="finished-screen">
-      <div id="fin-emoji">🎉</div>
+      <div id="fin-emoji">🏆</div>
       <div id="fin-title">Debate concluído!</div>
       <div id="fin-sub">Bom trabalho a todos os grupos.</div>
       <div id="fin-btns">
-        <button id="btn-applause" class="ctrl" onclick="playApplause()">👏 Palmas</button>
+        <button id="btn-applause" class="ctrl" onclick="triggerApplause()">👏 Palmas</button>
         <button id="btn-restart"  class="ctrl" onclick="resetDebate()">↺ Reiniciar</button>
       </div>
     </div>
   </div>
-// ── Suporte a apontador de apresentação ──────────────────────────────────────
-// Teclas enviadas pela maioria dos clickers (Logitech, Kensington, Interlink):
-//   Avançar : PageDown | ArrowRight | Period      → avança fase OU inicia/pausa
-//   Recuar  : PageUp   | ArrowLeft  | Escape(*)   → recua fase
-//   (*) Escape só recua; não fecha nada, pois não há diálogos modais.
-//
-// Lógica adoptada:
-//   - Se o debate ainda não começou (timeLeft == duração total e !running):
-//       PageDown/Right → toggleRun()   (inicia)
-//   - Se em curso (!done):
-//       PageDown/Right → toggleRun()   (pausa/retoma)
-//   - Se fase concluída (done):
-//       PageDown/Right → goNext()      (avança fase)
-//   - PageUp/Left → goPrev() sempre (comportamento idêntico ao botão)
-// ─────────────────────────────────────────────────────────────────────────────
-
-document.addEventListener("keydown", function (e) {
-  // Ignora se o foco estiver num campo de texto (segurança extra)
-  if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
-
-  const ADVANCE = ["PageDown", "ArrowRight", "Period", " ", "Enter"];
-  const BACK    = ["PageUp",   "ArrowLeft",  "Escape", "Backspace"];
-
-  if (ADVANCE.includes(e.key)) {
-    e.preventDefault();
-    if (finished) { playApplause(); return; }
-    if (interp)   { skipInterp();   return; }   // avança dentro da interpelação
-    if (done)     { goNext();       return; }   // fase terminada → próxima fase
-    toggleRun();                                 // inicia ou pausa
-    return;
-  }
-
-  if (BACK.includes(e.key)) {
-    e.preventDefault();
-    if (e.key === "Escape" && !finished) { goPrev(); }
-    else if (e.key !== "Escape")          { goPrev(); }
-    return;
-  }
-
-  // Interpelação: I ou F5
-  // Só actua se o botão estiver visível (fase permite interpelação, nenhuma em curso)
-  if (e.key === "i" || e.key === "I" || e.key === "F5") {
-    e.preventDefault();
-    const btn = document.getElementById("btn-interp");
-    if (btn && btn.style.display !== "none") { startInterp(); }
-    return;
-  }
-});
 
 <script>
+/* ── Confetti engine ─────────────────────────────────────────────────────── */
+(function(){
+  const canvas = document.getElementById("confetti-canvas");
+  const ctx = canvas.getContext("2d");
+  let particles = [];
+  let animId = null;
+
+  function resize() {
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  const COLORS = ["#fff","#fbbf24","#f87171","#34d399","#60a5fa","#c084fc","#fb923c"];
+
+  function spawn(n) {
+    for (let i = 0; i < n; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: -10 - Math.random() * 200,
+        vx: (Math.random() - 0.5) * 4,
+        vy: 2 + Math.random() * 5,
+        angle: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 0.3,
+        w: 8 + Math.random() * 8,
+        h: 4 + Math.random() * 4,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        alpha: 1,
+        decay: 0.008 + Math.random() * 0.006,
+      });
+    }
+  }
+
+  function frame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles = particles.filter(p => p.alpha > 0);
+    for (const p of particles) {
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.12; // gravity
+      p.vx *= 0.99;
+      p.angle += p.spin;
+      p.alpha -= p.decay;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.alpha);
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+      ctx.restore();
+    }
+    if (particles.length > 0) animId = requestAnimationFrame(frame);
+    else animId = null;
+  }
+
+  window.launchConfetti = function(big) {
+    spawn(big ? 320 : 180);
+    // For big bursts, keep adding waves
+    if (big) {
+      setTimeout(() => spawn(200), 600);
+      setTimeout(() => spawn(180), 1400);
+      setTimeout(() => spawn(160), 2400);
+    }
+    if (!animId) animId = requestAnimationFrame(frame);
+  };
+})();
+
+/* ── Debate logic ─────────────────────────────────────────────────────────── */
 const PHASES = [
   { label:"Apresentação",  team:"Defesa",   duration:120 },
   { label:"Apresentação",  team:"Oposição",  duration:120 },
@@ -305,6 +358,8 @@ let phaseIdx   = 0;
 let timeLeft   = PHASES[0].duration;
 let running    = false;
 let done       = false;
+// 'pendingFinish': last phase done, gong played, waiting for "Fase seguinte" click
+let pendingFinish = false;
 let finished   = false;
 let interp     = null;
 let interpTime = APARTE_DUR;
@@ -315,6 +370,12 @@ function playSound(f) { try { new Audio(f).play().catch(()=>{}); } catch(e){} }
 function playBell()     { playSound("boxing bell.wav"); }
 function playBuzzer()   { playSound("meditation gong.wav"); }
 function playApplause() { playSound("applause.wav"); }
+
+// Triggered by the button on the finished screen
+function triggerApplause() {
+  playApplause();
+  launchConfetti(true);
+}
 
 function fmt(s) {
   const m = Math.floor(Math.abs(s)/60), sec = Math.abs(s)%60;
@@ -371,19 +432,24 @@ function updateButtons() {
   const noI = NO_INTERP.includes(ph.label) || ph.team==="Ambas";
   document.getElementById("btn-prev").style.visibility = phaseIdx===0 ? "hidden" : "visible";
   document.getElementById("btn-prev").disabled = phaseIdx===0;
-  document.getElementById("btn-start").disabled = !!interp;
+  document.getElementById("btn-start").disabled = !!interp || pendingFinish;
   const lbl = running ? "⏸  Pausar" : (timeLeft<PHASES[phaseIdx].duration ? "▶  Retomar" : "▶  Iniciar");
   document.getElementById("btn-start").textContent = lbl;
   document.getElementById("btn-start").className = "ctrl"+(running?" running":"");
-  document.getElementById("btn-interp").style.display = (!noI&&!interp) ? "inline-block" : "none";
-  document.getElementById("no-interp").style.display  = noI ? "block" : "none";
+  document.getElementById("btn-interp").style.display = (!noI&&!interp&&!pendingFinish) ? "inline-block" : "none";
+  document.getElementById("no-interp").style.display  = (noI && !pendingFinish) ? "block" : "none";
+  // When pendingFinish, hide both interp controls — "next phase" is the only action
+  if (pendingFinish) {
+    document.getElementById("btn-interp").style.display = "none";
+    document.getElementById("no-interp").style.display  = "none";
+  }
 }
 
 function render() {
   if (finished) {
     document.getElementById("debate-view").style.display = "none";
     document.getElementById("finished-screen").classList.add("visible");
-    document.body.classList.add("finished"); return;
+    return;
   }
   document.getElementById("debate-view").style.display = "flex";
   const ph = PHASES[phaseIdx];
@@ -400,8 +466,13 @@ function startMainTicker() {
     if (timeLeft <= 0) {
       timeLeft=0; clearInterval(mainTimer); running=false; done=true;
       playBuzzer();
-      if (phaseIdx===PHASES.length-1) { finished=true; playApplause(); }
-      render();
+      // Last phase: enter pendingFinish state instead of going straight to finished
+      if (phaseIdx === PHASES.length - 1) {
+        pendingFinish = true;
+        render();
+      } else {
+        render();
+      }
     } else { updateRing(); }
   }, 1000);
 }
@@ -425,6 +496,7 @@ function startInterpTicker() {
 }
 
 function toggleRun() {
+  if (pendingFinish) return;
   if (done && phaseIdx<PHASES.length-1) return;
   if (!running) playBell();
   running=!running;
@@ -433,19 +505,37 @@ function toggleRun() {
 }
 
 function goNext() {
-  if (finished) { playApplause(); return; }
+  if (finished) { triggerApplause(); return; }
+
+  // If we're in pendingFinish, this click is the trigger for the final screen
+  if (pendingFinish) {
+    pendingFinish = false;
+    finished = true;
+    render();
+    // Small delay so the screen renders before the effects fire
+    setTimeout(() => {
+      playApplause();
+      launchConfetti(true);
+    }, 120);
+    return;
+  }
+
   clearInterval(mainTimer);
-  if (phaseIdx>=PHASES.length-1) { finished=true; playApplause(); render(); return; }
+  if (phaseIdx >= PHASES.length - 1) {
+    // Shouldn't normally reach here, but guard anyway
+    pendingFinish = true; render(); return;
+  }
   phaseIdx++; timeLeft=PHASES[phaseIdx].duration;
   running=false; done=false; interp=null;
   playBuzzer(); render();
 }
 
 function goPrev() {
+  if (finished) return;
   if (phaseIdx===0) return;
   clearInterval(mainTimer);
   phaseIdx--; timeLeft=PHASES[phaseIdx].duration;
-  running=false; done=false; interp=null; render();
+  running=false; done=false; pendingFinish=false; interp=null; render();
 }
 
 function startInterp() {
@@ -469,11 +559,42 @@ function skipInterp() {
 function resetDebate() {
   clearInterval(mainTimer); clearInterval(interpTimer);
   phaseIdx=0; timeLeft=PHASES[0].duration;
-  running=false; done=false; finished=false; interp=null;
-  document.body.classList.remove("finished");
+  running=false; done=false; finished=false; pendingFinish=false; interp=null;
   document.getElementById("finished-screen").classList.remove("visible");
   render();
 }
+
+/* ── Pointer/keyboard support ─────────────────────────────────────────────── */
+document.addEventListener("keydown", function (e) {
+  if (["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName)) return;
+
+  const ADVANCE = ["PageDown","ArrowRight","Period"," ","Enter"];
+  const BACK    = ["PageUp","ArrowLeft","Escape","Backspace"];
+
+  if (ADVANCE.includes(e.key)) {
+    e.preventDefault();
+    if (finished)       { triggerApplause(); return; }
+    if (interp)         { skipInterp();      return; }
+    if (pendingFinish)  { goNext();          return; }
+    if (done)           { goNext();          return; }
+    toggleRun();
+    return;
+  }
+
+  if (BACK.includes(e.key)) {
+    e.preventDefault();
+    if (e.key === "Escape" && !finished) goPrev();
+    else if (e.key !== "Escape")         goPrev();
+    return;
+  }
+
+  if (e.key === "i" || e.key === "I" || e.key === "F5") {
+    e.preventDefault();
+    const btn = document.getElementById("btn-interp");
+    if (btn && btn.style.display !== "none") startInterp();
+    return;
+  }
+});
 
 render();
 </script>
